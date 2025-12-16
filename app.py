@@ -9,8 +9,8 @@ API_URL = "https://piano-inference-production.up.railway.app/predict"
 st.title("🎹 Piano Keyboard and Chord Prediction")
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
-def decode_image(b64):
-    return Image.open(BytesIO(base64.b64decode(b64)))
+def decode_image(b64_str):
+    return Image.open(BytesIO(base64.b64decode(b64_str)))
 
 if uploaded:
     pil_img = Image.open(uploaded).convert("RGB")
@@ -28,22 +28,30 @@ if uploaded:
         st.error(f"Error from backend: {response.text}")
     else:
         data = response.json()
-
         if "error" in data:
             st.error(data["error"])
         else:
-            # Display images
-            st.subheader("Detected Keyboard")
-            st.image(decode_image(data["images"]["boxed"]), caption="Bounding Box")
+            # Show images from backend
+            if "images" in data:
+                st.subheader("Detected Keyboard with Bounding Box")
+                st.image(decode_image(data["images"]["boxed"]), caption="Bounding Box")
 
-            st.subheader("Cropped Keyboard")
-            st.image(decode_image(data["images"]["cropped"]), caption="Cropped Image")
+                st.subheader("Cropped Keyboard")
+                st.image(decode_image(data["images"]["cropped"]), caption="Cropped Image")
 
-            # Display predictions
-            st.subheader("Top 3 Predictions")
-            for p in data["predictions"]["top_3"]:
-                st.success(f"{p['chord']} ({p['note_name']}) — {p['score']:.2f}")
+            # Show predictions
+            top_notes = data.get("top_notes", [])
+            predicted_chord = data.get("predicted_chord", "")
+            chord_score = data.get("score", 0.0)
+            lesser_notes = data.get("lesser_notes", [])
 
-            st.subheader("Other Possible Chords")
-            for p in data["predictions"]["lesser_7"]:
-                st.write(f"{p['chord']} ({p['note_name']}) — {p['score']:.2f}")
+            st.subheader("Top 3 Notes")
+            for note in top_notes:
+                st.success(note)
+
+            st.subheader("Predicted Chord")
+            st.success(f"{predicted_chord} — Score: {chord_score:.2f}")
+
+            st.subheader("7 Lesser Notes")
+            for note in lesser_notes:
+                st.write(note)
