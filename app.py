@@ -1,55 +1,49 @@
 import streamlit as st
-import numpy as np
 from PIL import Image
 import requests
-import io
+import base64
+from io import BytesIO
 
 API_URL = "https://piano-inference-production.up.railway.app/predict"
 
-st.set_page_config(page_title="Piano Chord Detector", layout="centered")
 st.title("🎹 Piano Keyboard and Chord Prediction")
+uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
-uploaded = st.file_uploader(
-    "Upload a piano keyboard image",
-    type=["jpg", "jpeg", "png"]
-)
+def decode_image(b64):
+    return Image.open(BytesIO(base64.b64decode(b64)))
 
 if uploaded:
     pil_img = Image.open(uploaded).convert("RGB")
-    st.image(pil_img, caption="Original Image", use_container_width=True)
+    st.image(pil_img, caption="Original Image", width=600)
 
-    img_bytes = io.BytesIO()
+    img_bytes = BytesIO()
     pil_img.save(img_bytes, format="PNG")
     img_bytes.seek(0)
 
     with st.spinner("Sending image to backend for prediction..."):
-        try:
-            response = requests.post(
-                API_URL,
-                files={"file": ("image.png", img_bytes, "image/png")},
-                timeout=60  # important for cold starts
-            )
-        except requests.exceptions.RequestException as e:
-            st.error(f"❌ Backend not reachable:\n{e}")
-            st.stop()
+        files = {"file": ("image.png", img_bytes, "image/png")}
+        response = requests.post(API_URL, files=files)
 
     if response.status_code != 200:
-        st.error(f"❌ Backend error ({response.status_code}):\n{response.text}")
-        st.stop()
-
-    data = response.json()
-
-    if "error" in data:
-        st.error(f"⚠️ {data['error']}")
+        st.error(f"Error from backend: {response.text}")
     else:
-        st.subheader("🎼 Prediction Results")
-        st.write("**Top Notes (indices):**", data["top_notes"])
-        st.write("**Note Names:**", data["note_names"])
-        st.success(
-            f"🎵 **Predicted Chord:** {data['predicted_chord']} "
-            f"(Score: {data['score']:.2f})"
-        )
+        data = response.json()
 
-        if "other_notes" in data:
-            st.subheader("Other Top Notes")
-            st.write(data["other_notes"])
+        if "error" in data:
+            st.error(data["error"])
+        else:
+            # Display images
+            st.subheader("Detected Keyboard")
+            st.image(decode_image(data["images"]["boxed"]), caption="Bounding Box")
+
+            st.subheader("Cropped Keyboard")
+            st.image(decode_image(data["images"]["cropped"]), caption="Cropped Image")
+
+            # Display predictions
+            st.subheader("Top 3 Predictions")
+            for p in data["predictions"]["top_3"]:
+                st.success(f"{p['chord']} ({p['note_name']}) — {p['score']:.2f}")
+
+            st.subheader("Other Possible Chords")
+            for p in data["predictions"]["lesser_7"]:
+                st.write(f"{p['chord']} ({p['note_name']}) — {p['score']:.2f}")
